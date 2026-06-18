@@ -1,0 +1,134 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            label: Windows-x64
+            exe_name: UEFIReader.exe
+          - os: windows-latest
+            rid: win-arm64
+            label: Windows-ARM64
+            exe_name: UEFIReader.exe
+          - os: ubuntu-latest
+            rid: linux-x64
+            label: Linux-x64
+            exe_name: UEFIReader
+          - os: ubuntu-22.04-arm
+            rid: linux-arm64
+            label: Linux-ARM64
+            exe_name: UEFIReader
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET 10.0
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+
+    - name: Restore dependencies
+      run: dotnet restore UEFIReader.sln
+
+    - name: Publish
+      run: >
+        dotnet publish UEFIReader/UEFIReader.csproj
+        -c Release
+        -r ${{ matrix.rid }}
+        -o publish/${{ matrix.label }}
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.label }}
+        path: publish/${{ matrix.label }}/${{ matrix.exe_name }}
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Set Release Tag and Name
+      id: set_tag_name
+      run: |
+        current_time=$(date +"%y.%U.%H.%M")
+        echo "TAG_NAME=release-${current_time}" >> $GITHUB_ENV
+        echo "RELEASE_NAME=Release ${current_time}" >> $GITHUB_ENV
+
+    - name: Compress artifacts
+      run: |
+        for dir in artifacts/*/; do
+          label=$(basename "$dir")
+          (cd "$dir" && zip -r "../${label}.zip" .)
+        done
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ env.TAG_NAME }}
+        release_name: ${{ env.RELEASE_NAME }}
+        draft: false
+        prerelease: true
+
+    - name: Upload Windows-x64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: artifacts/Windows-x64.zip
+        asset_name: Windows-x64.zip
+        asset_content_type: application/zip
+
+    - name: Upload Windows-ARM64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: artifacts/Windows-ARM64.zip
+        asset_name: Windows-ARM64.zip
+        asset_content_type: application/zip
+
+    - name: Upload Linux-x64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: artifacts/Linux-x64.zip
+        asset_name: Linux-x64.zip
+        asset_content_type: application/zip
+
+    - name: Upload Linux-ARM64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: artifacts/Linux-ARM64.zip
+        asset_name: Linux-ARM64.zip
+        asset_content_type: application/zip
