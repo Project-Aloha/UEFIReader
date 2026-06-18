@@ -215,7 +215,8 @@ namespace UEFIReader
 
                         if (File.Exists(Path.Combine(combinedPath, outputFileName)))
                         {
-                            throw new Exception("File Conflict Detected");
+                            outputFileName = outputFileName + ".1";
+                            Console.WriteLine(outputFileName +" already exists. Renaming new one to " + outputFileName);
                         }
                         File.WriteAllBytes(Path.Combine(combinedPath, outputFileName), item.DecompressedImage);
                     }
